@@ -1,56 +1,108 @@
 #define DEBUG
 
-#ifdef DEBUG
- #define DEBUG_PRINT(x)  Serial.print (x)
- #define DEBUG_PRINTLN(x)  Serial.println (x)
-#else
- #define DEBUG_PRINT(x)
- #define DEBUG_PRINTLN(x)
-#endif
 
-class PhotoCell
+class Sensor {
+	public:
+		virtual bool Get();
+};
+
+class PhotoCell : public Sensor
 {
   int PIN;
+  int cdsThreshold;
+  bool debug;
+
   
   public:
-  PhotoCell(int pinnum) {
+  PhotoCell(int pinnum, int threshold, bool enableDebug) {
     PIN = pinnum;
+    cdsThreshold = threshold;
+    debug = enableDebug;
+    
+	#ifdef DEBUG
+	if (debug) {
+		Serial.print("Adding Light Detector on PIN:");
+	  	Serial.println(pinnum);
+	}
+	#endif
+	
   }
 
-  int Get() {
-    return analogRead(PIN);    
+  bool Get() {
+  	int lightlevel = analogRead(PIN);
+  	
+  	#ifdef DEBUG
+  	if (debug) {
+  		Serial.print("Light Level = ");
+		Serial.println(lightlevel);
+  	}
+	#endif
+	
+    return  lightlevel < cdsThreshold;    
   }
 };
 
-class MotionSensor {
+
+
+class MotionSensor : public Sensor {
 
     int PIN;
+    bool debug;
 
     public:
-    MotionSensor(int pinnum) {
+    MotionSensor(int pinnum, bool enableDebug) {
       PIN = pinnum;  
+      debug = enableDebug;
+      
+      #ifdef DEBUG
+      if (debug) {
+      	Serial.print("Adding Motion Detector on PIN:");
+  	  	Serial.println(pinnum);
+      }
+      #endif
     }
 
     bool Get() {
-        return digitalRead(PIN);
+    	bool state = digitalRead(PIN);
+    	
+    	#ifdef DEBUG
+      	if (debug) {
+      		Serial.print("Motion Sensor State:");
+  	  		Serial.println(state);
+      	}
+    	#endif
+    	
+        return state;
     }
 };
 
-class DistanceSensor {
+class DistanceSensor : public Sensor{
 
 	int PIN;
 	int stackLocation;
     double triggerDistance;
+    bool debug;
 
     static const int stackSize = 4;
 
 	double avg[stackSize];
 
 	public:
-	DistanceSensor(int pinnum, double triggerDist) {
+	DistanceSensor(int pinnum, double triggerDist, bool enableDebug) {
 		PIN = pinnum;
     	triggerDistance = triggerDist;
     	stackLocation = 0;
+		debug = enableDebug;
+
+      #ifdef DEBUG
+      if (debug) {
+      	Serial.print("Adding Motion Detector on PIN:");
+  	  	Serial.print(pinnum);
+  	  	Serial.print(" | Trigger Distance:");
+  	  	Serial.println(triggerDist);
+      }
+      #endif
+    	
     	for (int i = 0; i < stackSize; i++) {
     		avg[i] = 100.0;
     	}
@@ -58,9 +110,7 @@ class DistanceSensor {
 
 	bool Get() {
 		double distance = 6202.3*pow(analogRead(PIN),-1.056);
-		DEBUG_PRINT("Distance = ");
-		DEBUG_PRINT(distance);
-		DEBUG_PRINT(" | Average = ");
+		
 		avg[stackLocation] = distance;
 		if (stackLocation == stackSize -1) {
 			stackLocation = 0;
@@ -72,7 +122,16 @@ class DistanceSensor {
     		temp += avg[i];
     	}
     	temp = temp / stackSize;
-		DEBUG_PRINTLN(temp);
+    	
+    	#ifdef DEBUG
+		if (debug) {
+			Serial.print("Distance = ");
+			Serial.print(distance);
+			Serial.print(" | Average = ");
+			Serial.println(temp);
+		}
+		#endif
+		
 		return temp <= triggerDistance;
 	}
 };
@@ -88,78 +147,54 @@ class LightBar
   static const int GDOWN = 3; //Short for going down
   
   int state;
-  
+  bool debug;
 
   int LPWMPIN;
-  int cdsThreshold;
   int fadeSpeed;
   int lightTime;
   unsigned long lastUpdate;
   int numOfPhotos;
-  int numOfMotions;
-  int numOfDistances;
+  int numOfSensors;
   unsigned long timeUp;
   int currentFade;
   
-  PhotoCell *photoCells[inputCount];
-  MotionSensor *motionSensors[inputCount];
-  DistanceSensor *distanceSensors[inputCount];
-  
-  
+  Sensor *photoCells[inputCount];
+  Sensor *sensors[inputCount];
+   
   public:
-  LightBar(int lightpwmpin, int cdsthreshold, int fadeSpeed, int lighttime) {
+  LightBar(int lightpwmpin, int fadeSpeed, int lighttime, bool enableDebug) {
     LPWMPIN = lightpwmpin;
-    cdsThreshold = cdsthreshold;
     fadeSpeed = fadeSpeed;
     lightTime = lighttime;
-
+	debug = enableDebug;
+	
 	currentFade = 0;
 	timeUp = 0;
     numOfPhotos = 0;
-    numOfMotions = 0;
-    numOfDistances = 0;
-
+	numOfSensors = 0;
+	
     state = LOW;
-
-    for (int i = 0; i<= inputCount; i++ ){
-      photoCells[i] = NULL;
-    }
-
-    for (int i = 0; i<= inputCount; i++ ){
-      motionSensors[i] = NULL;
-    }
-
-    
-    for (int i = 0; i<= inputCount; i++ ){
-      distanceSensors[i] = NULL;
-    }
   }
 
-  void AttachPhoto(int pin) {
-  		DEBUG_PRINT("Adding PhotoCell on PIN:");
-  		DEBUG_PRINTLN(pin);
-        photoCells[numOfPhotos] = new PhotoCell(pin);
+  void AttachPhoto(Sensor *photoCell) {
+        photoCells[numOfPhotos] = photoCell;
         numOfPhotos++;
   }
 
-  void AttachMotion(int pin) {
-  	  DEBUG_PRINT("Adding Motion Detector on PIN:");
-  	  DEBUG_PRINTLN(pin);
-      motionSensors[numOfMotions] = new MotionSensor(pin);
-      numOfMotions++;
+  void AttachSensor(Sensor *sensor) {
+  	 sensors[numOfSensors] = sensor;
+  	 numOfSensors++;
   }
-
-  void AttachDistance(int pin, double trigDistance) {
-    DEBUG_PRINT("Adding Distance Detector on PIN:");
-      DEBUG_PRINTLN(pin);
-      distanceSensors[numOfMotions] = new DistanceSensor(pin, trigDistance);
-      numOfDistances++;
-  }
+  
   void Update() {
      if ((millis() - lastUpdate) > updateInterval) {
         lastUpdate = millis();
-        //DEBUG_PRINT("State is:");
-        //DEBUG_PRINTLN(state);
+        #ifdef DEBUG
+        if (debug) {
+        	Serial.print("State is:");
+        	Serial.println(state);
+        }
+        #endif
         switch(state) {
           case HIGH:
           	if (Detect()) { //If we have motion, reset the timeUp
@@ -207,25 +242,17 @@ class LightBar
   	bool isDarkEnough = 0;
   	int lightlevel = 0;
 	for (int i = 0; i < numOfPhotos; i++) {
-		lightlevel = photoCells[i]->Get();
-	//	DEBUG_PRINT("Light Level = ");
-	//	DEBUG_PRINTLN(lightlevel);
-		if (lightlevel < cdsThreshold){
+		if (photoCells[i]->Get()){
 			isDarkEnough = 1;
+			break;
 		}
 	}
 	if (isDarkEnough) {
-		for( int i = 0; i < numOfMotions; i++) {
-			if (motionSensors[i]->Get()) {
-				return true;
-			}
-		}
-
-   for (int i = 0; i < numOfDistances; i++) {
-      if (distanceSensors[i]->Get()) {
-        return true; 
-      }
-   }
+	   for (int i = 0; i < numOfSensors; i++) {
+    	  if (sensors[i]->Get()) {
+	        return true; 
+    	  }
+   		}
 		
 		return false;
 	}else{
@@ -236,21 +263,18 @@ class LightBar
 
 };
 
-//Stairs(Light PWM Pin, Photo Sensor Threshold, Fade Speed, Illumination Duration)
-LightBar Stairs(3, 1000, 5, 5);
+//Stairs(Light PWM Pin, Fade Speed, Illumination Duration, Enable Debug)
+LightBar Stairs(3, 5, 5, false);
 
 
 
 void setup() {
   Serial.begin(9600);
-  Stairs.AttachPhoto(0);
-  //Stairs.AttachMotion(2);
-  Stairs.AttachDistance(1, 30.00);
+  Stairs.AttachPhoto(new PhotoCell(0, 1000, false));
+  Stairs.AttachSensor(new MotionSensor(2, false));
 }
 
 void loop() {
   Stairs.Update();
- //temp.Get();
- //delay(500);
 }
 
