@@ -1,6 +1,31 @@
 #define DEBUG
 
 
+// Set the mux to the proper pin
+void setMuxPin(int pin) {
+	/*
+	Serial.print(bitRead(pin,0));
+	Serial.print(bitRead(pin,1));
+	Serial.print(bitRead(pin,2));
+	Serial.println(bitRead(pin,3));
+	*/
+	digitalWrite(9, bitRead(pin,0));
+	digitalWrite(10, bitRead(pin,1));
+	digitalWrite(12, bitRead(pin,2));
+	digitalWrite(13, bitRead(pin,3));
+};
+
+
+int analogMuxRead(int pin) {
+	setMuxPin(pin);
+	return analogRead(0);
+};
+
+bool digitalMuxRead(int pin) {
+	setMuxPin(pin);
+	return digitalRead(8);
+}
+
 class Sensor {
 	public:
 		virtual bool Get();
@@ -29,7 +54,7 @@ class PhotoCell : public Sensor
   }
 
   bool Get() {
-  	int lightlevel = analogRead(PIN);
+  	int lightlevel = analogMuxRead(PIN);
   	
   	#ifdef DEBUG
   	if (debug) {
@@ -57,13 +82,13 @@ class MotionSensor : public Sensor {
       #ifdef DEBUG
       if (debug) {
       	Serial.print("Adding Motion Detector on PIN:");
-  	  	Serial.println(pinnum);
+      	Serial.println(pinnum);
       }
       #endif
     }
 
     bool Get() {
-    	bool state = digitalRead(PIN);
+    	bool state = digitalMuxRead(PIN);
     	
     	#ifdef DEBUG
       	if (debug) {
@@ -82,6 +107,7 @@ class DistanceSensor : public Sensor{
 	int stackLocation;
     double triggerDistance;
     bool debug;
+    double total;
 
     static const int stackSize = 4;
 
@@ -93,6 +119,7 @@ class DistanceSensor : public Sensor{
     	triggerDistance = triggerDist;
     	stackLocation = 0;
 		debug = enableDebug;
+		total = 0;
 
       #ifdef DEBUG
       if (debug) {
@@ -105,24 +132,30 @@ class DistanceSensor : public Sensor{
     	
     	for (int i = 0; i < stackSize; i++) {
     		avg[i] = 100.0;
+    		total += 100;
     	}
 	}
 
+	//Keep a running total of the distance as it relates to stack size.  
+	//On each read, it will add the newest amount to the total, move the pointer forward one and remove that distance from the total.  
+	//This means we don't need to loop through the stack on each read.
 	bool Get() {
-		double distance = 6202.3*pow(analogRead(PIN),-1.056);
+		double distance = 6202.3*pow(analogMuxRead(PIN),-1.056);
 		
 		avg[stackLocation] = distance;
+		total += distance;
+		
+		//Move us forward one
 		if (stackLocation == stackSize -1) {
 			stackLocation = 0;
 		}else{
 			stackLocation ++;
 		}
-		double temp;
-		for (int i = 0; i < stackSize; i++) {
-    		temp += avg[i];
-    	}
-    	temp = temp / stackSize;
-    	
+		//Remove the distance from the total for the next.  (basically removing the oldest distance)
+		total -= avg[stackLocation];
+		
+		double temp = total / stackSize;
+
     	#ifdef DEBUG
 		if (debug) {
 			Serial.print("Distance = ");
@@ -264,14 +297,18 @@ class LightBar
 };
 
 //Stairs(Light PWM Pin, Fade Speed, Illumination Duration, Enable Debug)
-LightBar Stairs(3, 5, 5, false);
+LightBar Stairs(3, 5, 1, false);
 
 
 
 void setup() {
   Serial.begin(9600);
-  Stairs.AttachPhoto(new PhotoCell(0, 1000, false));
-  Stairs.AttachSensor(new MotionSensor(2, false));
+  pinMode(9, OUTPUT); 
+  pinMode(10, OUTPUT); 
+  pinMode(12, OUTPUT); 
+  pinMode(13, OUTPUT); 
+  Stairs.AttachPhoto(new PhotoCell(1, 1000, true));
+  Stairs.AttachSensor(new MotionSensor(0, false));
 }
 
 void loop() {
