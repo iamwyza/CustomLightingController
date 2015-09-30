@@ -138,7 +138,7 @@ class DistanceSensor : public Sensor{
 
 	//Keep a running total of the distance as it relates to stack size.  
 	//On each read, it will add the newest amount to the total, move the pointer forward one and remove that distance from the total.  
-	//This means we don't need to loop through the stack on each read.
+	//This means we don't need to loop through the stack on each read. -  Thanks to my Father-In-Law for this idea.
 	bool Get() {
 		double distance = 6202.3*pow(analogMuxRead(PIN),-1.056);
 		
